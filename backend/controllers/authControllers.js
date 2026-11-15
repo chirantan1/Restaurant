@@ -2,20 +2,54 @@ const User = require("../models/userModel");
 const bcrypt = require("bcryptjs");
 const JWT = require("jsonwebtoken");
 
+// REGISTER CONTROLLER
 const registerController = async (req, res) => {
   try {
     const { username, email, password, address, phoneNumber, userType } =
       req.body;
 
-    if (!username || !email || !password || !address || !phoneNumber) {
+    // Validate required fields
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password ||
+      !phoneNumber ||
+      typeof phoneNumber !== "string" ||
+      !phoneNumber.trim() ||
+      !address
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields",
       });
     }
 
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    // Normalize address to an array of strings
+    const normalizedAddress = Array.isArray(address)
+      ? address.map((item) => String(item).trim()).filter(Boolean)
+      : [String(address).trim()];
+
+    if (normalizedAddress.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid address",
+      });
+    }
+
+    // Normalize email
     const normalizedEmail = email.trim().toLowerCase();
 
+    // Check duplicate email
     const existingUser = await User.findOne({
       email: normalizedEmail,
     });
@@ -23,21 +57,25 @@ const registerController = async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "User already exists",
+        message: "User already exists with this email",
       });
     }
 
+    // Public registration roles
     const allowedRoles = ["client", "vendor", "delivery"];
+
     const chosenRole = allowedRoles.includes(userType) ? userType : "client";
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Create user
     const newUser = new User({
       username: username.trim(),
       email: normalizedEmail,
       password: hashedPassword,
-      address,
-      phoneNumber,
+      address: normalizedAddress,
+      phoneNumber: phoneNumber.trim(),
       userType: chosenRole,
     });
 
@@ -51,6 +89,22 @@ const registerController = async (req, res) => {
   } catch (error) {
     console.error("Register Error:", error);
 
+    // Duplicate email error
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already registered",
+      });
+    }
+
+    // Mongoose validation error
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Error in register user",
@@ -59,11 +113,17 @@ const registerController = async (req, res) => {
   }
 };
 
+// LOGIN CONTROLLER
 const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please provide email and password",
