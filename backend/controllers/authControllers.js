@@ -8,15 +8,20 @@ const registerController = async (req, res) => {
       req.body;
 
     if (!username || !email || !password || !address || !phoneNumber) {
-      return res.status(400).send({
+      return res.status(400).json({
         success: false,
         message: "Please provide all required fields",
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
     if (existingUser) {
-      return res.status(409).send({
+      return res.status(409).json({
         success: false,
         message: "User already exists",
       });
@@ -25,13 +30,12 @@ const registerController = async (req, res) => {
     const allowedRoles = ["client", "vendor", "delivery"];
     const chosenRole = allowedRoles.includes(userType) ? userType : "client";
 
-    const salt = bcrypt.genSaltSync(10);
-    const hash = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
-      username,
-      email,
-      password: hash,
+      username: username.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
       address,
       phoneNumber,
       userType: chosenRole,
@@ -39,14 +43,15 @@ const registerController = async (req, res) => {
 
     await newUser.save();
 
-    res.status(201).send({
+    return res.status(201).json({
       success: true,
       message: "User registered successfully",
       userType: chosenRole,
     });
   } catch (error) {
-    console.log(error);
-    res.status(500).send({
+    console.error("Register Error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error in register user",
       error: error.message,
@@ -59,52 +64,69 @@ const loginController = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).send({
+      return res.status(400).json({
         success: false,
         message: "Please provide email and password",
       });
     }
 
-    const user = await User.findOne({ email });
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT_SECRET is missing from environment variables");
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
+
     if (!user) {
-      return res.status(401).send({
+      return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
     if (user.isBlocked) {
-      return res.status(403).send({
+      return res.status(403).json({
         success: false,
         message: "Your account has been blocked",
       });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
+
     if (!isPasswordValid) {
-      return res.status(401).send({
+      return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
     const token = JWT.sign(
-      { id: user._id, userType: user.userType },
+      {
+        id: user._id,
+        userType: user.userType,
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      {
+        expiresIn: "7d",
+      },
     );
 
-    user.password = undefined;
+    const userData = user.toObject();
+    delete userData.password;
 
-    res.status(200).send({
+    return res.status(200).json({
       success: true,
       message: "User logged in successfully",
-      user,
+      user: userData,
       token,
     });
   } catch (error) {
-    console.log(error);
-    res.status(500).send({
+    console.error("Login Error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error in login user",
       error: error.message,
@@ -112,4 +134,7 @@ const loginController = async (req, res) => {
   }
 };
 
-module.exports = { registerController, loginController };
+module.exports = {
+  registerController,
+  loginController,
+};
