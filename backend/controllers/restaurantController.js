@@ -2,6 +2,7 @@ const Restaurant = require("../models/restaurantModel");
 const Food = require("../models/foodModel");
 const mongoose = require("mongoose");
 
+// CREATE RESTAURANT
 const createRestaurantController = async (req, res) => {
   try {
     const {
@@ -17,17 +18,17 @@ const createRestaurantController = async (req, res) => {
       coordinates,
     } = req.body;
 
-    if (!title || !foodType) {
-      return res.status(400).send({
+    if (!title || !Array.isArray(foodType) || foodType.length === 0) {
+      return res.status(400).json({
         success: false,
-        message: "Title and food type are required",
+        message: "Title and food type array are required",
       });
     }
 
-    if (!Array.isArray(foodType)) {
-      return res.status(400).send({
+    if (!req.user?.id) {
+      return res.status(401).json({
         success: false,
-        message: "Food type must be an array",
+        message: "Authentication required",
       });
     }
 
@@ -48,13 +49,15 @@ const createRestaurantController = async (req, res) => {
 
     await newRestaurant.save();
 
-    res.status(201).send({
+    return res.status(201).json({
       success: true,
       message: "Restaurant created successfully",
       restaurant: newRestaurant,
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Create restaurant error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error creating restaurant",
       error: error.message,
@@ -62,13 +65,23 @@ const createRestaurantController = async (req, res) => {
   }
 };
 
+// GET ALL RESTAURANTS
 const getAllRestaurantsController = async (req, res) => {
   try {
     const filter = {};
 
-    if (req.user.userType === "vendor") {
+    // If a vendor is logged in, show only their restaurants.
+    // Public visitors can see all restaurants.
+    if (req.user?.userType === "vendor") {
       filter.owner = req.user.id;
     } else if (req.query.owner) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.owner)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid owner ID",
+        });
+      }
+
       filter.owner = req.query.owner;
     }
 
@@ -76,14 +89,16 @@ const getAllRestaurantsController = async (req, res) => {
       .populate("owner", "username email phoneNumber")
       .sort({ createdAt: -1 });
 
-    res.status(200).send({
+    return res.status(200).json({
       success: true,
       message: "Restaurants fetched successfully",
       count: restaurants.length,
-      restaurants,
+      restaurants: restaurants,
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Get all restaurants error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error fetching restaurants",
       error: error.message,
@@ -91,20 +106,30 @@ const getAllRestaurantsController = async (req, res) => {
   }
 };
 
+// GET MY RESTAURANTS
 const getMyRestaurantsController = async (req, res) => {
   try {
-    const restaurants = await Restaurant.find({ owner: req.user.id }).sort({
-      createdAt: -1,
-    });
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
 
-    res.status(200).send({
+    const restaurants = await Restaurant.find({
+      owner: req.user.id,
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
       success: true,
       message: "Your restaurants fetched successfully",
       count: restaurants.length,
       restaurants,
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Get my restaurants error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error fetching your restaurants",
       error: error.message,
@@ -112,36 +137,39 @@ const getMyRestaurantsController = async (req, res) => {
   }
 };
 
+// GET RESTAURANT BY ID
 const getRestaurantByIdController = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).send({
+      return res.status(400).json({
         success: false,
-        message: "Invalid restaurant id",
+        message: "Invalid restaurant ID",
       });
     }
 
     const restaurant = await Restaurant.findById(id).populate(
       "owner",
-      "username email phoneNumber"
+      "username email phoneNumber",
     );
 
     if (!restaurant) {
-      return res.status(404).send({
+      return res.status(404).json({
         success: false,
         message: "Restaurant not found",
       });
     }
 
-    res.status(200).send({
+    return res.status(200).json({
       success: true,
       message: "Restaurant fetched successfully",
       restaurant,
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Get restaurant by ID error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error fetching restaurant",
       error: error.message,
@@ -149,20 +177,29 @@ const getRestaurantByIdController = async (req, res) => {
   }
 };
 
+// UPDATE RESTAURANT
 const updateRestaurantController = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).send({
+      return res.status(400).json({
         success: false,
-        message: "Invalid restaurant id",
+        message: "Invalid restaurant ID",
+      });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
       });
     }
 
     const restaurant = await Restaurant.findById(id);
+
     if (!restaurant) {
-      return res.status(404).send({
+      return res.status(404).json({
         success: false,
         message: "Restaurant not found",
       });
@@ -172,27 +209,32 @@ const updateRestaurantController = async (req, res) => {
       req.user.userType !== "admin" &&
       restaurant.owner?.toString() !== req.user.id
     ) {
-      return res.status(403).send({
+      return res.status(403).json({
         success: false,
         message: "You can only modify your own restaurants",
       });
     }
 
-    const updatedData = req.body;
+    const updatedData = { ...req.body };
+
+    // Prevent changing protected fields.
     delete updatedData.owner;
     delete updatedData.isVerified;
 
     const updated = await Restaurant.findByIdAndUpdate(id, updatedData, {
       new: true,
+      runValidators: true,
     });
 
-    res.status(200).send({
+    return res.status(200).json({
       success: true,
       message: "Restaurant updated successfully",
       restaurant: updated,
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Update restaurant error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error updating restaurant",
       error: error.message,
@@ -200,20 +242,29 @@ const updateRestaurantController = async (req, res) => {
   }
 };
 
+// DELETE RESTAURANT
 const deleteRestaurantController = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).send({
+      return res.status(400).json({
         success: false,
-        message: "Invalid restaurant id",
+        message: "Invalid restaurant ID",
+      });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
       });
     }
 
     const restaurant = await Restaurant.findById(id);
+
     if (!restaurant) {
-      return res.status(404).send({
+      return res.status(404).json({
         success: false,
         message: "Restaurant not found",
       });
@@ -223,7 +274,7 @@ const deleteRestaurantController = async (req, res) => {
       req.user.userType !== "admin" &&
       restaurant.owner?.toString() !== req.user.id
     ) {
-      return res.status(403).send({
+      return res.status(403).json({
         success: false,
         message: "You can only delete your own restaurants",
       });
@@ -232,12 +283,14 @@ const deleteRestaurantController = async (req, res) => {
     await Food.deleteMany({ restaurant: id });
     await Restaurant.findByIdAndDelete(id);
 
-    res.status(200).send({
+    return res.status(200).json({
       success: true,
       message: "Restaurant and its foods deleted successfully",
     });
   } catch (error) {
-    res.status(500).send({
+    console.error("Delete restaurant error:", error);
+
+    return res.status(500).json({
       success: false,
       message: "Error deleting restaurant",
       error: error.message,
