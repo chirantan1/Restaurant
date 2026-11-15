@@ -7,14 +7,14 @@ const connectDB = require("./config/db");
 
 dotenv.config();
 
-connectDB();
-
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
+// API routes
 app.use("/api/v1/test", require("./routes/testRoutes"));
 app.use("/api/v1/auth", require("./routes/authRoutes"));
 app.use("/api/v1/user", require("./routes/userRoutes"));
@@ -25,11 +25,39 @@ app.use("/api/v1/order", require("./routes/orderRoutes"));
 app.use("/api/v1/admin", require("./routes/adminRoutes"));
 
 app.get("/", (req, res) => {
-  return res.status(200).send("<h1>Welcome to food server</h1>");
+  res.status(200).send("<h1>Welcome to food server</h1>");
 });
 
-const PORT = process.env.PORT || 3000;
+// Connect database
+let dbConnection;
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`.green.bold);
+app.use(async (req, res, next) => {
+  try {
+    if (!dbConnection) {
+      dbConnection = connectDB();
+    }
+
+    await dbConnection;
+    next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Database connection failed",
+    });
+  }
 });
+
+// Vercel serverless export
+module.exports = app;
+
+// Local development
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+
+  connectDB();
+
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`.green.bold);
+  });
+}
