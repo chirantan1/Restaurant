@@ -12,6 +12,10 @@ import Profile from "./pages/Profile";
 import AdminDashboard from "./pages/AdminDashboard";
 import VendorDashboard from "./pages/VendorDashboard";
 import VendorRestaurantMenu from "./pages/VendorRestaurantMenu";
+import Contact from "./pages/Contact";
+import HowItWorks from "./pages/HowItWorks";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -51,6 +55,10 @@ export default function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/restaurants" element={<Restaurants />} />
             <Route path="/restaurants/:id" element={<RestaurantDetail />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/how-it-works" element={<HowItWorks />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
 
             <Route
               path="/my-orders"
