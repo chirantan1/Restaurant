@@ -3,6 +3,10 @@ const colors = require("colors");
 
 const connectDB = async () => {
   try {
+    if (!process.env.MONGODB_URI) {
+      throw new Error("MONGODB_URI is missing from environment variables");
+    }
+
     if (mongoose.connection.readyState === 1) {
       return mongoose.connection;
     }
